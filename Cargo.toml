@@ -1,0 +1,11 @@
+[package]
+name = "crane"
+version = "0.1.0"
+authors = ["Zach Bray <zachbray@googlemail.com>"]
+
+[dependencies]
+actix-web = "0.7"
+serde = "1.0.71"
+serde_derive = "1.0.71"
+serde_json = "1.0.24"
+quick-error = "1.2.2"
