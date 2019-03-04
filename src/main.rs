@@ -28,6 +28,7 @@ use crate::hub::requests::SetStatusRequest;
 use crate::hub::common::State;
 use std::process::Command;
 use std::fs;
+use crate::local::LocalRepo;
 
 fn main() -> Result<(), Error> {
     let running = Arc::new(AtomicBool::new(true));
@@ -44,9 +45,13 @@ fn main() -> Result<(), Error> {
         repo: args.repository,
     };
 
+    let mut local = LocalRepo::new(&args.user, &args.token, &repo, &args.context)?;
     let mut sleeper = RandomSleeper::new();
     while running.load(Ordering::SeqCst) {
-        test_latest_commit(&github, &repo, &args.branch, &args.context, &args.command).unwrap_or_else(|e| {
+        test_latest_commit(&github, &mut local, &repo,
+                           &args.branch,
+                           &args.context,
+                           &args.script).unwrap_or_else(|e| {
             println!("Failed to test latest commit. {}", e)
         });
         sleeper.sleep();
@@ -56,11 +61,12 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 
-fn test_latest_commit(github: &GitHubClient, repo: &RepoLocator,
-                      branch: &str, context: &str, command: &str) -> Result<(), Error> {
-    let branch_filter = GetCommitsRequest { branch: Option::Some(&branch) };
+fn test_latest_commit(github: &GitHubClient, local: &mut LocalRepo, repo: &RepoLocator,
+                      branch: &str, context: &str, script: &str) -> Result<(), Error> {
+    let branch_filter = GetCommitsRequest { sha: &branch };
     let maybe_commit = github.get_last_commit(&repo, branch_filter)?;
     if let Some(commit) = maybe_commit {
+        println!("Last commit was: {}", commit.sha);
         let statuses = github.get_statuses(&commit)?;
         let has_status_already = statuses.iter().any(|existing_status|
             existing_status.context.as_ref().map_or(false, |c| c == context));
@@ -72,9 +78,24 @@ fn test_latest_commit(github: &GitHubClient, repo: &RepoLocator,
                 description: Some("Running ..."), // TODO incorporate machine label
                 context: Some(context),
             });
-            // Command::new("bash")
-            //     .arg("")
-
+            local.reset_to(&commit)?;
+            let path_to_script = format!("{}/{}", &local.path(), &script);
+            let process_output = Command::new("bash")
+                .arg(path_to_script)
+                .output()?;
+            // TODO write stdout/stderr to S3
+            let new_state =
+                if process_output.status.success() {
+                    State::Failure
+                } else {
+                    State::Success
+                };
+            github.set_status(&commit, SetStatusRequest {
+                state: new_state,
+                target_url: None,
+                description: None,
+                context: Some(context),
+            });
         }
         println!("TODO hasStatus: {:?}", has_status_already);
     }
@@ -84,20 +105,40 @@ fn test_latest_commit(github: &GitHubClient, repo: &RepoLocator,
 mod local {
     use crate::hub::RepoLocator;
     use failure::Error;
+    use std::fs;
+    use crate::hub::CommitLocator;
+    use git2::Object;
+    use git2::Oid;
     use git2::Repository;
+    use git2::ResetType;
 
-    struct LocalRepo {
+    pub struct LocalRepo {
+        path: String,
         git: Repository,
     }
 
     impl LocalRepo {
-        pub fn new(token: &str, locator: &RepoLocator, context: &str) -> Result<Self, Error> {
-            let url = format!("https://{}@github.com/{}/{}.git", &token, &locator.owner, &locator.repo);
+        pub fn new(user: &str, token: &str, locator: &RepoLocator, context: &str) -> Result<Self, Error> {
+            let url = format!("https://{}:{}@github.com/{}/{}.git", &user, &token, &locator.owner, &locator.repo);
             let path = format!("/tmp/crane/{}/{}/{}", &locator.owner, &locator.repo, &context);
+            fs::remove_dir_all(&path);
             let repo = LocalRepo {
-                git: Repository::clone(&url, &path)?
+                path: path.clone(),
+                git: Repository::clone(&url, &path)?,
             };
             Ok(repo)
+        }
+
+        pub fn reset_to(&mut self, commit: &CommitLocator) -> Result<(), Error> {
+            self.git.find_remote("origin")?
+                .fetch(&["refs/heads/*"], None, None)?;
+            let git_commit = self.git.find_commit(Oid::from_str(&commit.sha)?)?;
+            self.git.reset(&git_commit.as_object(), ResetType::Hard, None)?;
+            Ok(())
+        }
+
+        pub fn path(&self) -> &str {
+            &self.path
         }
     }
 }

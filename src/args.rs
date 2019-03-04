@@ -3,15 +3,24 @@ use clap::{App, Arg};
 
 #[derive(Debug)]
 pub struct Args {
+    pub user: String,
     pub token: String,
     pub owner: String,
     pub repository: String,
     pub branch: String,
     pub context: String,
-    pub command: String,
+    pub script: String,
 }
 
 pub fn parse_args() -> Args {
+    let user_key = "user";
+    let user_arg = Arg::with_name(user_key)
+        .short("u")
+        .value_name("GITHUB_USERNAME")
+        .required(true)
+        .help("User to connect to GitHub as.")
+        .takes_value(true);
+
     let token_key = "token";
     let token_arg = Arg::with_name(token_key)
         .short("t")
@@ -52,32 +61,34 @@ pub fn parse_args() -> Args {
         .help("Label to differentiate status from other statuses.")
         .takes_value(true);
 
-    let command_key = "command";
-    let command_arg = Arg::with_name(command_key)
+    let script_key = "script";
+    let script_arg = Arg::with_name(script_key)
         .short("e")
-        .value_name("COMMAND")
+        .value_name("FILE")
         .required(true)
-        .help("Command to run to test a commit.")
+        .help("Bash script to run to test a commit.")
         .takes_value(true);
 
     let matches = App::new("Crane")
         .version("0.1")
         .author("Zach Bray <zachbray@googlemail.com>")
         .about("Watches, builds and updates GitHub statuses.")
+        .arg(user_arg)
         .arg(token_arg)
         .arg(owner_arg)
         .arg(repository_arg)
         .arg(branch_arg)
         .arg(context_arg)
-        .arg(command_arg)
+        .arg(script_arg)
         .get_matches();
 
     Args {
+        user: matches.value_of(&user_key).unwrap().to_string(),
         token: matches.value_of(&token_key).unwrap().to_string(),
         owner: matches.value_of(&owner_key).unwrap().to_string(),
         repository: matches.value_of(&repository_key).unwrap().to_string(),
         branch: matches.value_of(&branch_key).unwrap().to_string(),
         context: matches.value_of(&context_key).unwrap().to_string(),
-        command: matches.value_of(&command_key).unwrap().to_string(),
+        script: matches.value_of(&script_key).unwrap().to_string(),
     }
 }

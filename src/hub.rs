@@ -118,8 +118,7 @@ pub mod requests {
 
     #[derive(Serialize, Debug)]
     pub struct GetCommitsRequest<'a> {
-        #[serde(rename = "sha")]
-        pub branch: Option<&'a str>
+        pub sha: &'a str
     }
 
     #[derive(Serialize, Debug)]
