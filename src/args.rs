@@ -48,9 +48,9 @@ pub fn parse_args() -> Args {
     let branch_key = "branch";
     let branch_arg = Arg::with_name(branch_key)
         .short("b")
-        .value_name("BRANCH")
+        .value_name("DEFAULT_BRANCH")
         .required(true)
-        .help("Name of the branch to watch")
+        .help("Name of the default branch to watch (typically master or develop). This must match the default branch on GitHub.")
         .takes_value(true);
 
     let context_key = "context";

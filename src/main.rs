@@ -19,7 +19,6 @@ use args::parse_args;
 use hub::GitHubClient;
 use failure::Error;
 use crate::hub::RepoLocator;
-use crate::hub::requests::GetCommitsRequest;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
@@ -63,8 +62,7 @@ fn main() -> Result<(), Error> {
 
 fn test_latest_commit(github: &GitHubClient, local: &mut LocalRepo, repo: &RepoLocator,
                       branch: &str, context: &str, script: &str) -> Result<(), Error> {
-    let branch_filter = GetCommitsRequest { sha: &branch };
-    let maybe_commit = github.get_last_commit(&repo, branch_filter)?;
+    let maybe_commit = github.get_last_commit(&repo)?;
     if let Some(commit) = maybe_commit {
         println!("Last commit was: {}", commit.sha);
         let statuses = github.get_statuses(&commit)?;

@@ -1,7 +1,6 @@
 use reqwest::Client;
 use reqwest::header;
 use std::result;
-use crate::hub::requests::GetCommitsRequest;
 use crate::hub::responses::CommitsResponse;
 use crate::hub::common::State;
 use crate::hub::requests::SetStatusRequest;
@@ -45,11 +44,10 @@ impl GitHubClient {
         })
     }
 
-    pub fn get_last_commit<'a>(&self, repo: &'a RepoLocator, request: GetCommitsRequest)
+    pub fn get_last_commit<'a>(&self, repo: &'a RepoLocator)
                                -> Result<Option<CommitLocator<'a>>> {
         let commits_url = format!("{}/commits", &repo.url());
         let mut response = self.client.get(&commits_url)
-            .json(&request)
             .send()
             .map_err(|inner_error| GitHubError::HttpError { inner_error })?;
         let commits: CommitsResponse = response.json()
@@ -115,11 +113,6 @@ pub mod common {
 
 pub mod requests {
     use crate::hub::common::State;
-
-    #[derive(Serialize, Debug)]
-    pub struct GetCommitsRequest<'a> {
-        pub sha: &'a str
-    }
 
     #[derive(Serialize, Debug)]
     pub struct SetStatusRequest<'a> {
