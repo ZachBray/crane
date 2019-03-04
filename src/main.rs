@@ -84,8 +84,10 @@ fn test_latest_commit(github: &GitHubClient, local: &mut LocalRepo, repo: &RepoL
             // TODO write stdout/stderr to S3
             let new_state =
                 if process_output.status.success() {
+                    println!("Test successful! :-D");
                     State::Success
                 } else {
+                    println!("Test failed! :-(");
                     State::Failure
                 };
             github.set_status(&commit, SetStatusRequest {
@@ -95,7 +97,6 @@ fn test_latest_commit(github: &GitHubClient, local: &mut LocalRepo, repo: &RepoL
                 context: Some(context),
             });
         }
-        println!("TODO hasStatus: {:?}", has_status_already);
     }
     Ok(())
 }
