@@ -10,6 +10,8 @@ pub struct Args {
     pub branch: String,
     pub context: String,
     pub script: String,
+    pub region: String,
+    pub bucket: String,
 }
 
 pub fn parse_args() -> Args {
@@ -69,6 +71,22 @@ pub fn parse_args() -> Args {
         .help("Bash script to run to test a commit.")
         .takes_value(true);
 
+    let region_key = "region";
+    let region_arg = Arg::with_name(region_key)
+        .long(region_key)
+        .value_name("AWS_REGION")
+        .required(true)
+        .help("AWS region of S3 bucket to save build logs.")
+        .takes_value(true);
+
+    let bucket_key = "bucket";
+    let bucket_arg = Arg::with_name(bucket_key)
+        .long(bucket_key)
+        .value_name("S3_BUCKET")
+        .required(true)
+        .help("AWS bucket for build logs.")
+        .takes_value(true);
+
     let matches = App::new("Crane")
         .version("0.1")
         .author("Zach Bray <zachbray@googlemail.com>")
@@ -80,6 +98,8 @@ pub fn parse_args() -> Args {
         .arg(branch_arg)
         .arg(context_arg)
         .arg(script_arg)
+        .arg(region_arg)
+        .arg(bucket_arg)
         .get_matches();
 
     Args {
@@ -90,5 +110,7 @@ pub fn parse_args() -> Args {
         branch: matches.value_of(&branch_key).unwrap().to_string(),
         context: matches.value_of(&context_key).unwrap().to_string(),
         script: matches.value_of(&script_key).unwrap().to_string(),
+        region: matches.value_of(&region_key).unwrap().to_string(),
+        bucket: matches.value_of(&bucket_key).unwrap().to_string(),
     }
 }

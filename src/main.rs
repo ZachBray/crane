@@ -6,6 +6,8 @@ extern crate failure_derive;
 extern crate git2;
 extern crate rand;
 extern crate reqwest;
+extern crate rusoto_core;
+extern crate rusoto_s3;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
@@ -14,6 +16,8 @@ extern crate serde_json;
 mod args;
 mod sleeper;
 mod hub;
+mod local;
+mod s3;
 
 use args::parse_args;
 use hub::GitHubClient;
@@ -26,8 +30,8 @@ use crate::sleeper::RandomSleeper;
 use crate::hub::requests::SetStatusRequest;
 use crate::hub::common::State;
 use std::process::Command;
-use std::fs;
 use crate::local::LocalRepo;
+use crate::s3::Bucket;
 
 fn main() -> Result<(), Error> {
     let running = Arc::new(AtomicBool::new(true));
@@ -46,9 +50,11 @@ fn main() -> Result<(), Error> {
 
     let mut local = LocalRepo::new(&args.user, &args.token, &repo, &args.branch, &args.context)?;
     let mut sleeper = RandomSleeper::new();
+    let bucket_key_prefix = format!("build/logs/{}/{}", &args.branch, &args.context);
+    let bucket = Bucket::new(args.region, args.bucket, bucket_key_prefix);
     while running.load(Ordering::SeqCst) {
         test_latest_commit(&github, &mut local, &repo,
-                           &args.branch,
+                           &bucket,
                            &args.context,
                            &args.script).unwrap_or_else(|e| {
             println!("Failed to test latest commit. {}", e)
@@ -61,7 +67,7 @@ fn main() -> Result<(), Error> {
 }
 
 fn test_latest_commit(github: &GitHubClient, local: &mut LocalRepo, repo: &RepoLocator,
-                      branch: &str, context: &str, script: &str) -> Result<(), Error> {
+                      bucket: &Bucket, context: &str, script: &str) -> Result<(), Error> {
     let maybe_commit = github.get_last_commit(&repo)?;
     if let Some(commit) = maybe_commit {
         println!("Last commit was: {}", commit.sha);
@@ -73,15 +79,14 @@ fn test_latest_commit(github: &GitHubClient, local: &mut LocalRepo, repo: &RepoL
             github.set_status(&commit, SetStatusRequest {
                 state: State::Pending,
                 target_url: None,
-                description: Some("Running ..."), // TODO incorporate machine label
+                description: None, // TODO incorporate machine label
                 context: Some(context),
-            });
+            })?;
             local.reset_to(&commit)?;
             let path_to_script = format!("{}/{}", &local.path(), &script);
             let process_output = Command::new("bash")
                 .arg(path_to_script)
                 .output()?;
-            // TODO write stdout/stderr to S3
             let new_state =
                 if process_output.status.success() {
                     println!("Test successful! :-D");
@@ -90,56 +95,15 @@ fn test_latest_commit(github: &GitHubClient, local: &mut LocalRepo, repo: &RepoL
                     println!("Test failed! :-(");
                     State::Failure
                 };
+            let build_url = bucket.put(&format!("{}/stdout.txt", commit.sha), process_output.stdout)?;
+            bucket.put(&format!("{}/stderr.txt", commit.sha), process_output.stderr)?;
             github.set_status(&commit, SetStatusRequest {
                 state: new_state,
-                target_url: None,
+                target_url: Some(&build_url),
                 description: None,
                 context: Some(context),
-            });
+            })?;
         }
     }
     Ok(())
-}
-
-mod local {
-    use crate::hub::RepoLocator;
-    use failure::Error;
-    use std::fs;
-    use crate::hub::CommitLocator;
-    use git2::Object;
-    use git2::Oid;
-    use git2::Repository;
-    use git2::ResetType;
-
-    pub struct LocalRepo {
-        path: String,
-        default_branch: String,
-        git: Repository,
-    }
-
-    impl LocalRepo {
-        pub fn new(user: &str, token: &str, locator: &RepoLocator, branch: &str, context: &str) -> Result<Self, Error> {
-            let url = format!("https://{}:{}@github.com/{}/{}.git", &user, &token, &locator.owner, &locator.repo);
-            let path = format!("/tmp/crane/{}/{}/{}", &locator.owner, &locator.repo, &context);
-            fs::remove_dir_all(&path);
-            let repo = LocalRepo {
-                path: path.clone(),
-                default_branch: branch.to_string(),
-                git: Repository::clone(&url, &path)?,
-            };
-            Ok(repo)
-        }
-
-        pub fn reset_to(&mut self, commit: &CommitLocator) -> Result<(), Error> {
-            self.git.find_remote("origin")?
-                .fetch(&[&self.default_branch], None, None)?;
-            let git_commit = self.git.find_commit(Oid::from_str(&commit.sha)?)?;
-            self.git.reset(&git_commit.as_object(), ResetType::Hard, None)?;
-            Ok(())
-        }
-
-        pub fn path(&self) -> &str {
-            &self.path
-        }
-    }
 }

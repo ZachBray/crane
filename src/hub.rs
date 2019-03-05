@@ -2,7 +2,6 @@ use reqwest::Client;
 use reqwest::header;
 use std::result;
 use crate::hub::responses::CommitsResponse;
-use crate::hub::common::State;
 use crate::hub::requests::SetStatusRequest;
 use crate::hub::responses::StatusesResponse;
 
