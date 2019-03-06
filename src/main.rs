@@ -16,7 +16,7 @@ extern crate termion;
 extern crate tui;
 
 mod args;
-mod sleeper;
+mod timer;
 mod hub;
 mod local;
 mod s3;
@@ -29,7 +29,7 @@ use crate::hub::RepoLocator;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
-use crate::sleeper::RandomSleeper;
+use crate::timer::RandomExpBackoffTimer;
 use crate::hub::requests::SetStatusRequest;
 use crate::hub::common::State;
 use std::process::Command;
@@ -41,6 +41,9 @@ use std::thread;
 use std::io;
 use termion::input::TermRead;
 use termion::event::Key;
+use std::time::Duration;
+
+const TICK_PERIOD: Duration = Duration::from_millis(64);
 
 fn main() -> Result<(), Error> {
     let args = parse_args();
@@ -62,19 +65,23 @@ fn main() -> Result<(), Error> {
 
     let github = GitHubClient::new(&args.token)?;
     let mut local = LocalRepo::new(&args.user, &args.token, &repo, &args.branch, &args.context)?;
-    let mut sleeper = RandomSleeper::new();
+    let mut timer = RandomExpBackoffTimer::new();
     let bucket_key_prefix = format!("build/logs/{}/{}", &args.branch, &args.context);
     let bucket = Bucket::new(args.region, args.bucket, bucket_key_prefix);
     let is_running = monitor_application_state();
     while is_running() {
-        test_latest_commit(&github, &mut local, &repo,
-                           &bucket,
-                           &args.context,
-                           &args.script).unwrap_or_else(|_e| {
-            // TODO println!("Failed to test latest commit. {}", e)
-        });
+        if timer.is_due() {
+            test_latest_commit(&github, &mut local, &repo,
+                               &bucket,
+                               &args.context,
+                               &args.script).unwrap_or_else(|_e| {
+                // TODO println!("Failed to test latest commit. {}", e)
+            });
+            timer.reset();
+        }
+
         ui.render()?;
-        sleeper.sleep();
+        thread::sleep(TICK_PERIOD);
     }
 
     Ok(())
