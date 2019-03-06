@@ -16,7 +16,7 @@ use termion::input::MouseTerminal;
 use std::time::Instant;
 use std::cmp::max;
 
-
+#[derive(Clone, Copy)]
 pub enum Status {
     Succeeded,
     Pending,
@@ -24,16 +24,16 @@ pub enum Status {
 }
 
 impl Status {
-    fn render<B>(&self, frame: &mut Frame<B>, area: Rect) where B: Backend {
-        let text = match self {
+    fn text(&self) -> &'static str {
+        match self {
             Status::Succeeded => "Succeeded",
             Status::Pending => "Pending",
             Status::Failed => "Failed",
-        };
+        }
+    }
 
-        let lines = [Text::raw(text)];
-
-        let style = match self {
+    fn style(&self) -> Style {
+        match self {
             Status::Succeeded => Style::default()
                 .fg(Color::Green),
             Status::Pending => Style::default()
@@ -43,7 +43,12 @@ impl Status {
                 .bg(Color::Red)
                 .fg(Color::White)
                 .modifier(Modifier::Blink),
-        };
+        }
+    }
+
+    fn render<B>(&self, frame: &mut Frame<B>, area: Rect) where B: Backend {
+        let lines = [Text::raw(self.text())];
+        let style = self.style();
 
         let block = Block::default()
             .borders(Borders::ALL)
@@ -91,6 +96,39 @@ impl PropertyTable {
     }
 }
 
+struct BuildResult {
+    sha: String,
+    status: Status,
+}
+
+struct BuildTable {
+    builds: Vec<BuildResult>,
+}
+
+impl BuildTable {
+    fn new() -> Self {
+        BuildTable {
+            builds: vec![]
+        }
+    }
+
+    fn render<B>(&self, frame: &mut Frame<B>, area: Rect) where B: Backend {
+        let rows = self.builds.iter()
+            .map(|result| Row::StyledData(
+                vec![result.sha.to_string(), result.status.text().to_string()].into_iter(), result.status.style()));
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title("Builds");
+
+        Table::new(["Commit", "Status"].iter(), rows)
+            .widths(&[12, 18])
+            .header_style(Style::default().fg(Color::DarkGray))
+            .block(block)
+            .render(frame, area)
+    }
+}
+
 struct RetryWindow {
     start_time: Instant,
     due_time: Instant,
@@ -100,7 +138,7 @@ impl RetryWindow {
     fn new() -> Self {
         RetryWindow {
             start_time: Instant::now(),
-            due_time: Instant::now()
+            due_time: Instant::now(),
         }
     }
 
@@ -111,7 +149,7 @@ impl RetryWindow {
 
         let now = Instant::now();
         let window = self.due_time - self.start_time;
-        let window_millis =  window.as_secs() * 1000 + (window.subsec_millis() as u64);
+        let window_millis = window.as_secs() * 1000 + (window.subsec_millis() as u64);
         let remaining = self.due_time - now;
         let remaining_millis = remaining.as_secs() * 1000 + (remaining.subsec_millis() as u64);
         let ratio = remaining_millis as f64 / (max(window_millis, 1) as f64);
@@ -130,6 +168,7 @@ pub struct Summary {
     status: Status,
     property_table: PropertyTable,
     retry_window: RetryWindow,
+    build_table: BuildTable,
 }
 
 impl Summary {
@@ -143,7 +182,8 @@ impl Summary {
             status: Status::Pending,
             terminal,
             property_table: PropertyTable { properties },
-            retry_window: RetryWindow::new()
+            retry_window: RetryWindow::new(),
+            build_table: BuildTable::new(),
         };
         Ok(summary)
     }
@@ -152,6 +192,8 @@ impl Summary {
         let status = &self.status;
         let property_table = &self.property_table;
         let retry_window = &self.retry_window;
+        let build_table = &self.build_table;
+
         self.terminal.draw(|mut frame| {
             let outer_horizontal_pane = Layout::default()
                 .direction(Direction::Horizontal)
@@ -160,17 +202,18 @@ impl Summary {
 
             let left_vertical_pane = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints(vec![Constraint::Max(3), Constraint::Min(10)])
+                .constraints(vec![Constraint::Length(5), Constraint::Min(10)])
                 .split(outer_horizontal_pane[0]);
 
             let right_vertical_pane = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints(vec![Constraint::Max(3), Constraint::Min(10)])
+                .constraints(vec![Constraint::Length(5), Constraint::Min(10)])
                 .split(outer_horizontal_pane[1]);
 
             status.render(&mut frame, left_vertical_pane[0]);
             property_table.render(&mut frame, left_vertical_pane[1]);
             retry_window.render(&mut frame, right_vertical_pane[0]);
+            build_table.render(&mut frame, right_vertical_pane[1]);
         })?;
         Ok(())
     }
@@ -178,5 +221,32 @@ impl Summary {
     pub fn reset_retry_window(&mut self, due_time: Instant) {
         self.retry_window.start_time = Instant::now();
         self.retry_window.due_time = due_time;
+    }
+
+    pub fn record_build(&mut self, sha: &str, status: Status) {
+        self.status = status;
+
+        let mut has_seen_build = false;
+        for build in &mut self.build_table.builds {
+            if build.sha == sha {
+                build.status = status;
+                has_seen_build = true;
+            }
+        }
+
+        if has_seen_build {
+            return;
+        }
+
+        let builds = &mut self.build_table.builds;
+
+        if builds.len() >= 10 {
+            builds.remove(0);
+        }
+
+        builds.push(BuildResult {
+            sha: sha.to_string(),
+            status,
+        });
     }
 }

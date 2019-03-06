@@ -72,8 +72,7 @@ fn main() -> Result<(), Error> {
     while is_running() {
         if timer.is_due() {
             test_latest_commit(&github, &mut local, &repo,
-                               &bucket,
-                               &args.context,
+                               &bucket, &mut ui, &args.context,
                                &args.script).unwrap_or_else(|_e| {
                 // TODO println!("Failed to test latest commit. {}", e)
             });
@@ -111,15 +110,23 @@ fn monitor_application_state() -> impl Fn() -> bool {
 }
 
 fn test_latest_commit(github: &GitHubClient, local: &mut LocalRepo, repo: &RepoLocator,
-                      bucket: &Bucket, context: &str, script: &str) -> Result<(), Error> {
+                      bucket: &Bucket, ui: &mut Summary, context: &str, script: &str) -> Result<(), Error> {
     let maybe_commit = github.get_last_commit(&repo)?;
     if let Some(commit) = maybe_commit {
-        // TODO println!("Last commit was: {}", commit.sha);
         let statuses = github.get_statuses(&commit)?;
-        let has_status_already = statuses.iter().any(|existing_status|
-            existing_status.context.as_ref().map_or(false, |c| c == context));
-        if !has_status_already {
-            // TODO println!("Starting test...");
+        let maybe_status = statuses.iter()
+            .filter(|existing_status|
+                existing_status.context.as_ref().map_or(false, |c| c == context))
+            .next();
+        if let Some(status) = maybe_status {
+            let ui_status = match status.state {
+                State::Pending => ui::Status::Pending,
+                State::Error | State::Failure => ui::Status::Failed,
+                State::Success => ui::Status::Succeeded,
+            };
+            ui.record_build(&commit.sha, ui_status)
+        } else {
+            ui.record_build(&commit.sha, ui::Status::Pending);
             github.set_status(&commit, SetStatusRequest {
                 state: State::Pending,
                 target_url: None,
@@ -133,10 +140,10 @@ fn test_latest_commit(github: &GitHubClient, local: &mut LocalRepo, repo: &RepoL
                 .output()?;
             let new_state =
                 if process_output.status.success() {
-                    // TODO println!("Test successful! :-D");
+                    ui.record_build(&commit.sha, ui::Status::Succeeded);
                     State::Success
                 } else {
-                    // TODO println!("Test failed! :-(");
+                    ui.record_build(&commit.sha, ui::Status::Failed);
                     State::Failure
                 };
             let build_url = bucket.put(&format!("{}/stdout.txt", commit.sha), process_output.stdout)?;
