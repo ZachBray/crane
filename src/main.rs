@@ -12,12 +12,15 @@ extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 extern crate serde_json;
+extern crate termion;
+extern crate tui;
 
 mod args;
 mod sleeper;
 mod hub;
 mod local;
 mod s3;
+mod ui;
 
 use args::parse_args;
 use hub::GitHubClient;
@@ -32,50 +35,83 @@ use crate::hub::common::State;
 use std::process::Command;
 use crate::local::LocalRepo;
 use crate::s3::Bucket;
+use crate::ui::Property;
+use crate::ui::Summary;
+use std::thread;
+use std::io;
+use termion::input::TermRead;
+use termion::event::Key;
 
 fn main() -> Result<(), Error> {
-    let running = Arc::new(AtomicBool::new(true));
-    let r = running.clone();
-    ctrlc::set_handler(move || {
-        r.store(false, Ordering::SeqCst);
-    }).expect("Error setting Ctrl-C handler");
-    println!("Press Ctrl-C to stop...");
-
     let args = parse_args();
-    let github = GitHubClient::new(&args.token)?;
+
+    let properties = vec![
+        Property::new("Owner", &args.owner),
+        Property::new("Repo", &args.repository),
+        Property::new("Branch", &args.branch),
+        Property::new("Build Type", &args.context),
+    ];
+
+    let mut ui = Summary::new(properties)?;
+
     let repo = RepoLocator {
         owner: args.owner,
         repo: args.repository,
     };
 
+
+    let github = GitHubClient::new(&args.token)?;
     let mut local = LocalRepo::new(&args.user, &args.token, &repo, &args.branch, &args.context)?;
     let mut sleeper = RandomSleeper::new();
     let bucket_key_prefix = format!("build/logs/{}/{}", &args.branch, &args.context);
     let bucket = Bucket::new(args.region, args.bucket, bucket_key_prefix);
-    while running.load(Ordering::SeqCst) {
+    let is_running = monitor_application_state();
+    while is_running() {
         test_latest_commit(&github, &mut local, &repo,
                            &bucket,
                            &args.context,
-                           &args.script).unwrap_or_else(|e| {
-            println!("Failed to test latest commit. {}", e)
+                           &args.script).unwrap_or_else(|_e| {
+            // TODO println!("Failed to test latest commit. {}", e)
         });
+        ui.render()?;
         sleeper.sleep();
     }
 
-    println!("Exiting...");
     Ok(())
+}
+
+fn monitor_application_state() -> impl Fn() -> bool {
+    let running = Arc::new(AtomicBool::new(true));
+    let sig_int_running = running.clone();
+    ctrlc::set_handler(move || {
+        sig_int_running.store(false, Ordering::SeqCst);
+    }).expect("Error setting Ctrl-C handler");
+    let ctrl_c_running = running.clone();
+    thread::spawn(move || {
+       let input = io::stdin();
+       for event in input.keys() {
+           if let Ok(key) = event {
+               match key {
+                   Key::Ctrl('c') | Key::Char('q') =>
+                       ctrl_c_running.store(false, Ordering::SeqCst),
+                   _ => {}
+               }
+           }
+       }
+    });
+    return move || running.load(Ordering::SeqCst);
 }
 
 fn test_latest_commit(github: &GitHubClient, local: &mut LocalRepo, repo: &RepoLocator,
                       bucket: &Bucket, context: &str, script: &str) -> Result<(), Error> {
     let maybe_commit = github.get_last_commit(&repo)?;
     if let Some(commit) = maybe_commit {
-        println!("Last commit was: {}", commit.sha);
+        // TODO println!("Last commit was: {}", commit.sha);
         let statuses = github.get_statuses(&commit)?;
         let has_status_already = statuses.iter().any(|existing_status|
             existing_status.context.as_ref().map_or(false, |c| c == context));
         if !has_status_already {
-            println!("Starting test...");
+            // TODO println!("Starting test...");
             github.set_status(&commit, SetStatusRequest {
                 state: State::Pending,
                 target_url: None,
@@ -89,10 +125,10 @@ fn test_latest_commit(github: &GitHubClient, local: &mut LocalRepo, repo: &RepoL
                 .output()?;
             let new_state =
                 if process_output.status.success() {
-                    println!("Test successful! :-D");
+                    // TODO println!("Test successful! :-D");
                     State::Success
                 } else {
-                    println!("Test failed! :-(");
+                    // TODO println!("Test failed! :-(");
                     State::Failure
                 };
             let build_url = bucket.put(&format!("{}/stdout.txt", commit.sha), process_output.stdout)?;

@@ -21,7 +21,6 @@ impl RandomSleeper {
         let x = self.exp.sample(&mut self.rng);
         let millis_to_wait = min(2000 + ((x * 3000.0).floor() as u64), 20000);
         let duration = Duration::from_millis(millis_to_wait);
-        println!("Waiting for {}ms before retrying.", millis_to_wait);
         thread::sleep(duration)
     }
 }
