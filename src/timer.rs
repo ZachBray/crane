@@ -23,10 +23,11 @@ impl RandomExpBackoffTimer {
         Instant::now() >= self.due_time
     }
 
-    pub fn reset(&mut self) {
+    pub fn reset(&mut self) -> Instant {
         let x = self.exp.sample(&mut self.rng);
         let millis_to_wait = min(2000 + ((x * 3000.0).floor() as u64), 20000);
         let duration = Duration::from_millis(millis_to_wait);
         self.due_time = Instant::now() + duration;
+        self.due_time
     }
 }

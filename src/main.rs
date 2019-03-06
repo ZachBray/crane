@@ -77,7 +77,8 @@ fn main() -> Result<(), Error> {
                                &args.script).unwrap_or_else(|_e| {
                 // TODO println!("Failed to test latest commit. {}", e)
             });
-            timer.reset();
+            let due_time = timer.reset();
+            ui.reset_retry_window(due_time);
         }
 
         ui.render()?;

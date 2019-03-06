@@ -13,6 +13,8 @@ use tui::widgets::*;
 use tui::style::*;
 use tui::layout::*;
 use termion::input::MouseTerminal;
+use std::time::Instant;
+use std::cmp::max;
 
 
 pub enum Status {
@@ -89,10 +91,45 @@ impl PropertyTable {
     }
 }
 
+struct RetryWindow {
+    start_time: Instant,
+    due_time: Instant,
+}
+
+impl RetryWindow {
+    fn new() -> Self {
+        RetryWindow {
+            start_time: Instant::now(),
+            due_time: Instant::now()
+        }
+    }
+
+    fn render<B>(&self, frame: &mut Frame<B>, area: Rect) where B: Backend {
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title("Retry period");
+
+        let now = Instant::now();
+        let window = self.due_time - self.start_time;
+        let window_millis =  window.as_secs() * 1000 + (window.subsec_millis() as u64);
+        let remaining = self.due_time - now;
+        let remaining_millis = remaining.as_secs() * 1000 + (remaining.subsec_millis() as u64);
+        let ratio = remaining_millis as f64 / (max(window_millis, 1) as f64);
+
+        Gauge::default()
+            .block(block)
+            .ratio(ratio)
+            .style(Style::default().fg(Color::DarkGray))
+            .label(&format!("{}s remaining", remaining.as_secs()))
+            .render(frame, area)
+    }
+}
+
 pub struct Summary {
     terminal: Terminal<TermionBackend<AlternateScreen<MouseTerminal<RawTerminal<Stdout>>>>>,
     status: Status,
     property_table: PropertyTable,
+    retry_window: RetryWindow,
 }
 
 impl Summary {
@@ -106,6 +143,7 @@ impl Summary {
             status: Status::Pending,
             terminal,
             property_table: PropertyTable { properties },
+            retry_window: RetryWindow::new()
         };
         Ok(summary)
     }
@@ -113,15 +151,32 @@ impl Summary {
     pub fn render(&mut self) -> Result<(), Error> {
         let status = &self.status;
         let property_table = &self.property_table;
+        let retry_window = &self.retry_window;
         self.terminal.draw(|mut frame| {
-            let main = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints(vec![Constraint::Min(3), Constraint::Min(10)])
+            let outer_horizontal_pane = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints(vec![Constraint::Min(40), Constraint::Percentage(65)])
                 .split(frame.size());
 
-            status.render(&mut frame, main[0]);
-            property_table.render(&mut frame, main[1])
+            let left_vertical_pane = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints(vec![Constraint::Max(3), Constraint::Min(10)])
+                .split(outer_horizontal_pane[0]);
+
+            let right_vertical_pane = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints(vec![Constraint::Max(3), Constraint::Min(10)])
+                .split(outer_horizontal_pane[1]);
+
+            status.render(&mut frame, left_vertical_pane[0]);
+            property_table.render(&mut frame, left_vertical_pane[1]);
+            retry_window.render(&mut frame, right_vertical_pane[0]);
         })?;
         Ok(())
+    }
+
+    pub fn reset_retry_window(&mut self, due_time: Instant) {
+        self.retry_window.start_time = Instant::now();
+        self.retry_window.due_time = due_time;
     }
 }
