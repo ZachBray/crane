@@ -32,7 +32,7 @@ impl Status {
         }
     }
 
-    fn style(&self) -> Style {
+    fn primary_style(&self) -> Style {
         match self {
             Status::Succeeded => Style::default()
                 .fg(Color::Green),
@@ -40,15 +40,18 @@ impl Status {
                 .fg(Color::Yellow)
                 .modifier(Modifier::Blink),
             Status::Failed => Style::default()
-                .bg(Color::Red)
-                .fg(Color::White)
+                .fg(Color::Red)
                 .modifier(Modifier::Blink),
         }
     }
 
+    fn secondary_style(&self) -> Style {
+        self.primary_style().modifier(Modifier::Reset)
+    }
+
     fn render<B>(&self, frame: &mut Frame<B>, area: Rect) where B: Backend {
         let lines = [Text::raw(self.text())];
-        let style = self.style();
+        let style = self.primary_style();
 
         let block = Block::default()
             .borders(Borders::ALL)
@@ -57,6 +60,7 @@ impl Status {
         Paragraph::new(lines.iter())
             .style(style)
             .block(block)
+            .alignment(Alignment::Center)
             .render(frame, area)
     }
 }
@@ -115,7 +119,7 @@ impl BuildTable {
     fn render<B>(&self, frame: &mut Frame<B>, area: Rect) where B: Backend {
         let rows = self.builds.iter()
             .map(|result| Row::StyledData(
-                vec![result.sha.to_string(), result.status.text().to_string()].into_iter(), result.status.style()));
+                vec![result.sha.to_string(), result.status.text().to_string()].into_iter(), result.status.secondary_style()));
 
         let block = Block::default()
             .borders(Borders::ALL)
@@ -208,7 +212,8 @@ impl Summary {
         let stdout = io::stdout().into_raw_mode()?;
         let stdout = MouseTerminal::from(stdout);
         let stdout = AlternateScreen::from(stdout);
-        let backend = TermionBackend::new(stdout);
+        let mut backend = TermionBackend::new(stdout);
+        backend.hide_cursor()?;
         let terminal = Terminal::new(backend)?;
         let summary = Summary {
             status: Status::Pending,
@@ -236,7 +241,7 @@ impl Summary {
 
             let left_vertical_pane = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints(vec![Constraint::Length(5), Constraint::Min(10), Constraint::Max(5)])
+                .constraints(vec![Constraint::Length(5), Constraint::Min(10), Constraint::Length(5)])
                 .split(outer_horizontal_pane[0]);
 
             let right_vertical_pane = Layout::default()
@@ -248,7 +253,6 @@ impl Summary {
             property_table.render(&mut frame, left_vertical_pane[1]);
             retry_window.render(&mut frame, right_vertical_pane[0]);
             build_table.render(&mut frame, right_vertical_pane[1]);
-
             last_error.render(&mut frame, left_vertical_pane[2]);
         })?;
         Ok(())
