@@ -120,6 +120,7 @@ impl BuildTable {
 
     fn render<B>(&self, frame: &mut Frame<B>, area: Rect) where B: Backend {
         let rows = self.builds.iter()
+            .rev()
             .map(|result| Row::StyledData(
                 vec![result.sha.to_string(), result.status.text().to_string()].into_iter(), result.status.secondary_style()));
 
