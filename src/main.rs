@@ -4,8 +4,6 @@ extern crate failure;
 #[macro_use]
 extern crate failure_derive;
 extern crate git2;
-#[macro_use]
-extern crate human_panic;
 extern crate rand;
 extern crate reqwest;
 extern crate rusoto_core;
@@ -41,14 +39,18 @@ use std::sync::atomic::Ordering;
 use std::process::Command;
 use std::thread;
 use std::io;
+use std::io::Write;
+use std::fs::File;
+use std::panic;
 use termion::input::TermRead;
 use termion::event::Key;
 use std::time::Duration;
+use std::panic::PanicInfo;
 
 const TICK_PERIOD: Duration = Duration::from_millis(64);
 
 fn main() -> Result<(), Error> {
-    setup_panic!();
+    set_up_panic_handler();
 
     let args = parse_args();
 
@@ -162,4 +164,12 @@ fn test_latest_commit(github: &GitHubClient, local: &mut LocalRepo, repo: &RepoL
         }
     }
     Ok(())
+}
+
+fn set_up_panic_handler() {
+    panic::set_hook(Box::new(|info: &PanicInfo| {
+        File::create("./panic.log").ok().into_iter().for_each(|mut log_file| {
+            write!(&mut log_file, "{}", info).unwrap_or(());
+        });
+    }));
 }

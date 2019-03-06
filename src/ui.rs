@@ -164,12 +164,23 @@ impl RetryWindow {
 }
 
 struct LastError {
-    error: Error,
+    error: Option<Error>,
 }
 
 impl LastError {
+    fn new() -> Self {
+        LastError {
+            error: None
+        }
+    }
+
     fn render<B>(&self, frame: &mut Frame<B>, area: Rect) where B: Backend {
-        let lines = [Text::raw(format!("{}", &self.error))];
+        let text =  if let Some(error) = &self.error {
+            format!("{}", error)
+        } else {
+            "".to_string()
+        };
+        let lines = [Text::raw(text)];
 
         let block = Block::default()
             .borders(Borders::ALL)
@@ -189,7 +200,7 @@ pub struct Summary {
     property_table: PropertyTable,
     retry_window: RetryWindow,
     build_table: BuildTable,
-    last_error: Option<LastError>,
+    last_error: LastError,
 }
 
 impl Summary {
@@ -205,7 +216,7 @@ impl Summary {
             property_table: PropertyTable { properties },
             retry_window: RetryWindow::new(),
             build_table: BuildTable::new(),
-            last_error: None
+            last_error: LastError::new()
         };
         Ok(summary)
     }
@@ -223,15 +234,9 @@ impl Summary {
                 .constraints(vec![Constraint::Min(40), Constraint::Percentage(65)])
                 .split(frame.size());
 
-            let left_vertical_pane_constraints = if last_error.is_none() {
-                vec![Constraint::Length(5), Constraint::Min(10)]
-            } else {
-                vec![Constraint::Length(5), Constraint::Min(10), Constraint::Length(5)]
-            };
-
             let left_vertical_pane = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints(left_vertical_pane_constraints)
+                .constraints(vec![Constraint::Length(5), Constraint::Min(10), Constraint::Max(5)])
                 .split(outer_horizontal_pane[0]);
 
             let right_vertical_pane = Layout::default()
@@ -244,9 +249,7 @@ impl Summary {
             retry_window.render(&mut frame, right_vertical_pane[0]);
             build_table.render(&mut frame, right_vertical_pane[1]);
 
-            if let Some(error) = last_error {
-                error.render(&mut frame, left_vertical_pane[2]);
-            }
+            last_error.render(&mut frame, left_vertical_pane[2]);
         })?;
         Ok(())
     }
@@ -284,6 +287,6 @@ impl Summary {
     }
 
     pub fn record_error(&mut self, error: Error) {
-        self.last_error = Some(LastError { error });
+        self.last_error.error = Some(error);
     }
 }
