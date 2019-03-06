@@ -163,12 +163,32 @@ impl RetryWindow {
     }
 }
 
+struct LastError {
+    error: Error,
+}
+
+impl LastError {
+    fn render<B>(&self, frame: &mut Frame<B>, area: Rect) where B: Backend {
+        let lines = [Text::raw(format!("{}", &self.error))];
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title("Last error");
+
+        Paragraph::new(lines.iter())
+            .style(Style::default().fg(Color::Red))
+            .block(block)
+            .render(frame, area)
+    }
+}
+
 pub struct Summary {
     terminal: Terminal<TermionBackend<AlternateScreen<MouseTerminal<RawTerminal<Stdout>>>>>,
     status: Status,
     property_table: PropertyTable,
     retry_window: RetryWindow,
     build_table: BuildTable,
+    last_error: Option<LastError>,
 }
 
 impl Summary {
@@ -184,6 +204,7 @@ impl Summary {
             property_table: PropertyTable { properties },
             retry_window: RetryWindow::new(),
             build_table: BuildTable::new(),
+            last_error: None
         };
         Ok(summary)
     }
@@ -193,6 +214,7 @@ impl Summary {
         let property_table = &self.property_table;
         let retry_window = &self.retry_window;
         let build_table = &self.build_table;
+        let last_error = &self.last_error;
 
         self.terminal.draw(|mut frame| {
             let outer_horizontal_pane = Layout::default()
@@ -200,20 +222,30 @@ impl Summary {
                 .constraints(vec![Constraint::Min(40), Constraint::Percentage(65)])
                 .split(frame.size());
 
+            let left_vertical_pane_constraints = if last_error.is_none() {
+                vec![Constraint::Length(5), Constraint::Min(10)]
+            } else {
+                vec![Constraint::Length(5), Constraint::Min(10), Constraint::Length(5)]
+            };
+
             let left_vertical_pane = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints(vec![Constraint::Length(5), Constraint::Min(10)])
+                .constraints(left_vertical_pane_constraints)
                 .split(outer_horizontal_pane[0]);
 
             let right_vertical_pane = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints(vec![Constraint::Length(5), Constraint::Min(10)])
+                .constraints(vec![Constraint::Length(5), Constraint::Min(5)])
                 .split(outer_horizontal_pane[1]);
 
             status.render(&mut frame, left_vertical_pane[0]);
             property_table.render(&mut frame, left_vertical_pane[1]);
             retry_window.render(&mut frame, right_vertical_pane[0]);
             build_table.render(&mut frame, right_vertical_pane[1]);
+
+            if let Some(error) = last_error {
+                error.render(&mut frame, left_vertical_pane[2]);
+            }
         })?;
         Ok(())
     }
@@ -248,5 +280,9 @@ impl Summary {
             sha: sha.to_string(),
             status,
         });
+    }
+
+    pub fn record_error(&mut self, error: Error) {
+        self.last_error = Some(LastError { error });
     }
 }

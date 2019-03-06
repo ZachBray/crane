@@ -73,8 +73,8 @@ fn main() -> Result<(), Error> {
         if timer.is_due() {
             test_latest_commit(&github, &mut local, &repo,
                                &bucket, &mut ui, &args.context,
-                               &args.script).unwrap_or_else(|_e| {
-                // TODO println!("Failed to test latest commit. {}", e)
+                               &args.script).unwrap_or_else(|e| {
+                ui.record_error(e);
             });
             let due_time = timer.reset();
             ui.reset_retry_window(due_time);
