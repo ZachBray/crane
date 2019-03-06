@@ -6,4 +6,4 @@ echo "Still building..."
 sleep 2
 echo "Success"
 
-exit 1
+exit 0
