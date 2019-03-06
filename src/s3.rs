@@ -19,7 +19,7 @@ impl Bucket {
         }
     }
 
-    pub fn put(&self, key: &str, content: Vec<u8>) -> Result<String, Error> {
+    pub fn put(&self, key: &str, content: Vec<u8>) -> Result<(), Error> {
         let region = Region::from_str(&self.region)?;
         let client = S3Client::new(region);
         let body: ByteStream = ByteStream::from(content);
@@ -51,8 +51,11 @@ impl Bucket {
             tagging: None,
             website_redirect_location: None,
         }).sync()?;
-        let url = format!("https://s3-{}.amazonaws.com/{}/{}/{}",
-                          &self.region, &self.bucket, &self.key_prefix, &key);
-        Ok(url)
+        Ok(())
+    }
+
+    pub fn get_url(&self, key: &str) -> String {
+        format!("https://s3.console.aws.amazon.com/s3/buckets/{}/{}/{}?region={}&tab=overview",
+                &self.bucket, &self.key_prefix, &key, &self.region)
     }
 }

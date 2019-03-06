@@ -146,8 +146,9 @@ fn test_latest_commit(github: &GitHubClient, local: &mut LocalRepo, repo: &RepoL
                     ui.record_build(&commit.sha, ui::Status::Failed);
                     State::Failure
                 };
-            let build_url = bucket.put(&format!("{}/stdout.txt", commit.sha), process_output.stdout)?;
+            bucket.put(&format!("{}/stdout.txt", commit.sha), process_output.stdout)?;
             bucket.put(&format!("{}/stderr.txt", commit.sha), process_output.stderr)?;
+            let build_url = bucket.get_url(&commit.sha);
             github.set_status(&commit, SetStatusRequest {
                 state: new_state,
                 target_url: Some(&build_url),
