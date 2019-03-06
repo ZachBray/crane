@@ -55,7 +55,7 @@ impl Bucket {
     }
 
     pub fn get_url(&self, key: &str) -> String {
-        format!("https://s3.console.aws.amazon.com/s3/buckets/{}/{}/{}?region={}&tab=overview",
+        format!("https://s3.console.aws.amazon.com/s3/buckets/{}/{}/{}/?region={}&tab=overview",
                 &self.bucket, &self.key_prefix, &key, &self.region)
     }
 }
