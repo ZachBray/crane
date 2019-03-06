@@ -133,6 +133,7 @@ fn test_latest_commit(github: &GitHubClient, local: &mut LocalRepo, repo: &RepoL
             ui.record_build(&commit.sha, ui_status)
         } else {
             ui.record_build(&commit.sha, ui::Status::Pending);
+            ui.render()?;
             github.set_status(&commit, SetStatusRequest {
                 state: State::Pending,
                 target_url: None,
