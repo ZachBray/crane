@@ -4,6 +4,8 @@ extern crate failure;
 #[macro_use]
 extern crate failure_derive;
 extern crate git2;
+#[macro_use]
+extern crate human_panic;
 extern crate rand;
 extern crate reqwest;
 extern crate rusoto_core;
@@ -46,6 +48,8 @@ use std::time::Duration;
 const TICK_PERIOD: Duration = Duration::from_millis(64);
 
 fn main() -> Result<(), Error> {
+    setup_panic!();
+
     let args = parse_args();
 
     let properties = vec![
