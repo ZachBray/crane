@@ -14,7 +14,9 @@ use tui::style::*;
 use tui::layout::*;
 use termion::input::MouseTerminal;
 use std::time::Instant;
+use std::time::Duration;
 use std::cmp::max;
+use std::cmp::min;
 
 #[derive(Clone, Copy)]
 pub enum Status {
@@ -154,7 +156,11 @@ impl RetryWindow {
         let now = Instant::now();
         let window = self.due_time - self.start_time;
         let window_millis = window.as_secs() * 1000 + (window.subsec_millis() as u64);
-        let remaining = self.due_time - now;
+        let remaining = if now >= self.due_time {
+            Duration::from_secs(0)
+        } else {
+            self.due_time - now
+        };
         let remaining_millis = remaining.as_secs() * 1000 + (remaining.subsec_millis() as u64);
         let ratio = remaining_millis as f64 / (max(window_millis, 1) as f64);
 
@@ -259,7 +265,7 @@ impl Summary {
     }
 
     pub fn reset_retry_window(&mut self, due_time: Instant) {
-        self.retry_window.start_time = Instant::now();
+        self.retry_window.start_time = min(Instant::now(), due_time);
         self.retry_window.due_time = due_time;
     }
 
