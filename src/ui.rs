@@ -178,6 +178,7 @@ impl LastError {
         Paragraph::new(lines.iter())
             .style(Style::default().fg(Color::Red))
             .block(block)
+            .wrap(true)
             .render(frame, area)
     }
 }
